@@ -1,0 +1,362 @@
+---
+title: "Atividade Avaliatica 6"
+author: "Edfram R Pereira"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+      latex_engine: xelatex
+header-includes:
+  - \usepackage{amssymb}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**Atividade -** Para compor a nota da disciplina o conjunto **Boston Housing Dataset** disponível no R deve ser analisado. Informações sobre esses dados podem ser encontradas em: Boston function - RDocumentation.
+
+Especificamente, deve-se predizer o *valor médio das casas ocupadas pelo proprietário (medv)* por meio das metodologias apresentadas na disciplina. Realize uma comparação entre os modelos por meio de um processo de validação cruzada utilizando como medidas o erro quadrático médio e correlação entre os valores preditos e observados. Faça um relatório. Tal relatório deve ser estregue de maneira organizada discutindo os resultados encontrados.
+
+# Introdução
+
+Para esta atividade usaremos o *R Studio* que trata-se de uma IDE (ambiente de desenvolvimento integrado) de código aberto.
+
+Vamos iniciar carregando os pacotes necessários para fazer as análises.
+
+```{r}
+library(tidyverse) # para realizar manipulação de dados e visualização
+
+library(tree) # Carregar o pacote tree
+
+library(randomForest) # Carregar o pacote randomForest
+
+library(MASS) #Carregar o banco de dados
+
+library(caret) # Trabalhar K-FOLD
+
+library(rpart) # Trabalhar K-FOLD
+
+library(rpart.plot)
+
+library(ggplot2)
+
+library(kableExtra)
+
+```
+
+Vamos carregar o pacote **MASS** que contém o data frame *Boston*, que será analisado neste trabalho, e o atribuímos à variável com o nome *dados*. Com a função *head(dados)* visualizamos as 6 primeira linhas para termos uma visualização prévia dos dados.
+
+```{r}
+dados <- Boston
+head(dados)
+```
+
+Para uma melhor compreensão das variáveis dos dados utilizamos o recurso *?Boston* para ter acesso as descrições dessas variáveis que estão na documentação do pacote *MASS versão 7.3-61* apresentadas na tabela abaixo.
+
+```{r}
+?Boston
+```
+
+```{r nomedatabela}
+df_tabela <- data.frame(Variável  = c("crim", "zn", "indus", "chas", 
+"nox", "rm","age", "dis", "rad", "tax", "ptratio", "black", "lstat", "medv"), 
+Descrição = c("per capita crime rate by town.", 
+"proportion of residential land zoned for lots over 25,000 sq.ft.",
+"proportion of non-retail business acres per town.", 
+"Charles River dummy variable (= 1 if tract bounds river; 0 otherwise).",
+"nitrogen oxides concentration (parts per 10 million).", 
+"average number of rooms per dwelling.", 
+"proportion of owner-occupied units built prior to 1940.", 
+"weighted mean of distances to five Boston employment centres.", 
+"index of accessibility to radial highways.", 
+"full-value property-tax rate per $10,000.", 
+"pupil-teacher ratio by town.", 
+"1000(Bk−0.63) 2  where 𝐵𝑘Bk is the proportion of blacks by town.", 
+"lower status of the population (percent).", 
+"median value of owner-occupied homes in $1000s.")) 
+df_tabela %>%
+  kable(booktabs=T, caption="**Variáveis do dataset Boston**")
+```
+
+Após compreender melhor as variáveis do banco de dados vamos particionar o conjunto de dados em dados de treinamento e dados de teste. Vamos realizar uma comparação entre os modelos por meio de um processo de validação cruzada, com k=5, utilizando como medidas o erro quadrático médio e correlação entre os valores preditos e observados.
+
+```{r}
+set.seed(12) # criamos uma semente
+
+# Definir o número de folds (k)
+k <- 5
+
+# Criar os folds
+folds <- createFolds(dados$medv, k = k, list = TRUE, returnTrain = FALSE)
+
+```
+
+Estamos interessados em predizer o valor médio das casas ocupadas pelo proprietário (medv) em função das outras 13 variáveis. Faremos isso utilizando os modelos **Regressão Linear**, **Árvore de Regreessão**, **Bagging** e **Random Forest**.
+
+# 1) Regressão Linear
+
+## Validação Cruzada
+Vamos ajustar nossa árvore com a função *lm* onde a variável dependente *medv* ficará em função das outras 13 variáveis. Utilizaremos o conjunto de dados *dados* e o subconjunto de treino *train*. Atribuimos o modelo à variável **lm_model**.
+
+```{r}
+# Inicializar um vetor para armazenar as métricas de desempenho
+lm_rmse <- numeric(k)
+
+# Realizar a validação cruzada k-fold
+for (i in 1:k) {
+  # Dividir os dados em conjunto de treinamento e teste
+  lm_train_data <- dados[-folds[[i]], ]
+  lm_test_data <- dados[folds[[i]], ]
+  
+  # Treinar o modelo linear múltiplo
+  lm_model <- lm(medv ~ ., data = lm_train_data)
+  
+  # Fazer previsões no conjunto de teste
+  lm_predictions <- predict(lm_model, newdata = lm_test_data)
+  
+  # Calcular o erro quadrático médio (RMSE)
+  lm_rmse[i]  <- sqrt(mean(((lm_predictions - lm_test_data)$medv)^2))
+}
+```
+
+Calculando a média do erro quadrático médio dos 5 valores calculados no processo de validação cruzada.
+
+```{r}
+# Calcular a média do RMSE
+lm_mean_rmse <- mean(lm_rmse)
+
+cat("Vetor dos RMSE = ", lm_rmse)
+
+cat("\nMédia do RMSE do Regressão Linear:", lm_mean_rmse)
+```
+
+Calculando a correlação entre os valores preditos e observados.
+
+```{r}
+##Capacidade preditiva (Correlação)
+lm_cp <- cor(lm_test_data$medv,lm_predictions)
+lm_cp
+```
+
+Após o modelo ser ajustado, solicitamos o resumo das informações do mesmo com a função *summary*.
+
+```{r}
+summary(lm_model)
+```
+
+
+# 2) Árvore de Regressão
+
+## Validação Cruzada
+
+Vamos ajustar nossa árvore com a função *tree* onde a variável dependente *medv* ficará em função das outras 13 variáveis. Utilizaremos o conjunto de dados *dados* e o subconjunto de treino *train*. Atribuimos o modelo à variável **tree_model**.
+
+```{r}
+# Inicializar um vetor para armazenar as métricas de desempenho
+tree_rmse <- numeric(k)
+
+# Realizar a validação cruzada k-fold
+for (i in 1:k) {
+  # Dividir os dados em conjunto de treinamento e teste
+  tree_train_data <- dados[-folds[[i]], ]
+  tree_test_data <- dados[folds[[i]], ]
+  
+  # Treinar o modelo arvore de regressão
+  tree_model <- tree(medv ~ ., data = tree_train_data)
+  
+  # Prever as classes no conjunto de teste
+  tree_predictions <- predict(tree_model, newdata = tree_test_data)
+  
+  # Calcular o erro quadrático médio (RMSE)
+  tree_rmse[i] <- sqrt(mean((tree_predictions - tree_test_data$medv)^2))
+}
+```
+
+Calculando a média do erro quadrático médio dos 5 valores calculados no processo de validação cruzada.
+
+```{r}
+# Calcular a média do RMSE
+tree_mean_rmse <- mean(tree_rmse)
+
+cat("Vetor dos RMSE = ", tree_rmse)
+
+cat("\nMédia do RMSE:", tree_mean_rmse)
+```
+
+Calculando a correlação entre os valores preditos e observados.
+
+```{r}
+##Capacidade preditiva (Correlação)
+tree_cp <- cor(tree_test_data$medv,tree_predictions)
+tree_cp
+```
+
+Após o modelo ser ajustado, solicitamos o resumo das informações do mesmo com a função *summary*.
+
+```{r}
+summary(tree_model)
+```
+
+Notemos que apenas quatro variáveis foram utilizadas no ajuste do modelo, a saber, *lstat* (% menor status da população), *rm* (número médio de quartos por habitação),  *dis* (média ponderada das distâncias a cinco centros de emprego de Boston) e *nox* (concentração de óxidos de nitrogênio (partes por 10 milhões)).
+
+Essa informação fica melhor visualizada no gráfico da árvore ajustada, abaixo.
+
+```{r}
+plot(tree_model, type = "uniform")
+text(tree_model, cex = 0.95)
+```
+
+# 3) Bagging
+
+## Validação Cruzada
+Vamos ajustar nossa árvore com a função *randomForest* onde a variável dependente *medv* ficará em função das outras 13 variáveis. Utilizaremos o conjunto de dados *dados* e o subconjunto de treino *train*. Atribuimos o modelo à variável **tree_model**.
+
+```{r}
+# Inicializar um vetor para armazenar as métricas de desempenho
+bag_rmse <- numeric(k)
+
+# Realizar a validação cruzada k-fold
+for (i in 1:k) {
+  # Dividir os dados em conjunto de treinamento e teste
+  bag_train_data <- dados[-folds[[i]], ]
+  bag_test_data <- dados[folds[[i]], ]
+  
+  # Treinar o modelo linear múltiplo
+  bag_model <- randomForest(medv ~ ., data = bag_train_data, mtry=13, importance =TRUE)
+  
+  # Prever as classes no conjunto de teste
+  bag_predictions <- predict(bag_model, newdata = bag_test_data)
+  
+  # Calcular o erro quadrático médio (RMSE)
+  bag_rmse[i] <- sqrt(mean((bag_predictions - bag_test_data$medv)^2))
+}
+```
+
+Calculando a média do erro quadrático médio dos 5 valores calculados no processo de validação cruzada.
+
+```{r}
+# Calcular a média do RMSE
+bag_mean_rmse <- mean(bag_rmse)
+
+cat("Vetor dos RMSE = ", bag_rmse)
+
+cat("\nMédia do RMSE:", bag_mean_rmse)
+```
+
+Calculando a correlação entre os valores preditos e observados.
+
+```{r}
+##Capacidade preditiva (Correlação)
+bag_cp <- cor(bag_test_data$medv,bag_predictions)
+bag_cp
+```
+
+Após o modelo ser ajustado, plotamos o gráfico das variáveis importantes do modelo com a função *varImpPlot*.
+
+```{r}
+varImpPlot(bag_model)
+```
+
+Notemos que apenas quatro variáveis são mais importante no ajuste do modelo, a saber, *lstat* (% menor status da população), *rm* (número médio de quartos por habitação),  *dis* (média ponderada das distâncias a cinco centros de emprego de Boston) e *nox* (concentração de óxidos de nitrogênio (partes por 10 milhões)).
+
+Essa informação fica melhor visualizada na tabela, abaixo.
+
+```{r}
+rf_imp <-importance(bag_model)
+rf_imp
+```
+
+
+# 4) Random Forest
+
+## validação cruzada
+
+Vamos ajustar nossa árvore com a função *randomForest* onde a variável dependente *medv* ficará em função das outras 13 variáveis. Utilizaremos o conjunto de dados *dados* e o subconjunto de treino *train*. Atribuimos o modelo à variável **rf_model**.
+
+
+```{r}
+# Inicializar um vetor para armazenar as métricas de desempenho
+rf_rmse <- numeric(k)
+
+# Realizar a validação cruzada k-fold
+for (i in 1:k) {
+  # Dividir os dados em conjunto de treinamento e teste
+  rf_train_data <- dados[-folds[[i]], ]
+  rf_test_data <- dados[folds[[i]], ]
+  
+  # Treinar o modelo linear múltiplo
+  rf_model <- randomForest(medv ~ ., data = rf_train_data, mtry=4, importance =TRUE)
+  
+  # Prever as classes no conjunto de teste
+  rf_predictions <- predict(rf_model, newdata = rf_test_data)
+  
+  # Calcular o erro quadrático médio (RMSE)
+  rf_rmse[i] <- sqrt(mean((rf_predictions - rf_test_data$medv)^2))
+}
+```
+
+Calculando a média do erro quadrático médio dos 5 valores calculados no processo de validação cruzada.
+
+```{r}
+# Calcular a média do RMSE
+rf_mean_rmse <- mean(rf_rmse)
+
+cat("Vetor dos RMSE = ", rf_rmse)
+
+cat("\nMédia do RMSE:", rf_mean_rmse)
+```
+
+Calculando a correlação entre os valores preditos e observados.
+
+```{r}
+rf_cp <- cor(rf_test_data$medv,rf_predictions)
+rf_cp
+```
+
+Após o modelo ser ajustado, plotamos o gráfico das variáveis importantes do modelo com a função *varImpPlot*.
+
+```{r}
+varImpPlot(rf_model)
+```
+
+Notemos que apenas duas variáveis são mais desempenho papel importante no ajuste do modelo, a saber, *lstat* (% menor status da população), *rm* (número médio de quartos por habitação).
+
+```{r}
+rf_imp <-importance(rf_model)
+rf_imp
+```
+
+# Conclusão
+
+Abaixo plotamos os gráficos de barras das média do erro quadrático médio dos 5 valores calculados no processo de validação cruzada e o das correlações entre os valores preditos e observados dos quatro modelos usados.
+
+## Gráfico de barra dos resultados
+
+```{r}
+resultados_RMSE <- data.frame(Modelos = c("Regressão Linear", "Árvore de Regressão", 
+                                          "Bagging", "Random Forest"),
+ Resultado = c(lm_mean_rmse, tree_mean_rmse, bag_mean_rmse, rf_mean_rmse))
+```
+
+```{r}
+
+ggplot(resultados_RMSE, aes(y = Resultado, x = Modelos, fill = tratamento)) +  
+  geom_bar(stat = "identity", fill = gray(.3), width = .75)
+```
+
+```{r}
+resultados_cp <- data.frame(Modelos = c("Regressão Linear", "Árvore de Regressão", 
+                                        "Bagging", "Random Forest"),
+                 Resultado = c(lm_cp, tree_cp, bag_cp, rf_cp))
+```
+
+```{r}
+
+ggplot(resultados_cp, aes(y = Resultado, x = Modelos, fill = tratamento)) +  
+  geom_bar(stat = "identity", fill = gray(.3), width = .75)
+```
+
+Notamos que os modelos *Random Forest* e *Bagging* apresentaram as menores média do erro quadrático médio dos 5 valores calculados no processo de validação cruzada, a saber, 3.162411 e 3.262258, respectivamente. Esses dois modelos também foram os que deram melhores resultados quando avaliamos as correlações entre os valores preditos e observados.
+
+Com isso esses resultados obtidos podemos escolher o Modelo *Random Forest* para fazer predições para o conjunto de dados estudados, pois o mesmo apresentou os melhores resultados.
+
