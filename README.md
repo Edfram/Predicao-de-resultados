@@ -1,2 +1,4 @@
-# Predi-o-de-resultados
-Predição de resultados do banco de dados Boston utilizando modelo linear, arvore de decição, random forest, etc
+# Predicao-de-resultados
+Predição de resultados do banco de dados Boston utilizando modelo linear, árvore de decição, random forest, etc.
+
+Será utilizado a técnica de K-fold para comparar os modelos.
